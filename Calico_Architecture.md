@@ -22,7 +22,10 @@ Calico is a pure Layer‑3 networking system that builds a real routed network i
   - Node‑to‑router  
   - Router‑reflectors  
   - Datacenter fabric  
-
+---
+Overlay Networking :: - 
+Overlay networking creates a virtual network on top of the physical network so pods on different nodes can communicate even when the underlying network cannot route pod IPs. Calico supports VXLAN and IPIP as overlay modes (encapsulation) and BGP as an underlay mode (real routing). VXLAN needs the kernel VXLAN module; without it, Calico cannot create the vxlan.calico interface, causing Felix to restart. Installing linux-modules-extra and loading vxlan gives the kernel tunneling capability, and Calico stabilizes immediately.
+---
 ### **3. IPIP / VXLAN = optional tunnels**
 - Used only when direct routing is not possible.  
 - IPIP = lighter, faster.  
@@ -88,7 +91,7 @@ Pod → veth → IPIP/VXLAN tunnel → remote node → veth → Pod
 
 ---
 
-# ✅ **Calico Component**
+# **Calico Component**
 
 | Component | Role |
 |----------|------|
