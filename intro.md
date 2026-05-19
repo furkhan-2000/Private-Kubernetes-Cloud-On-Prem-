@@ -5,8 +5,8 @@ These are the base OS requirements before Kubernetes can even start.
 Choose a **stable, supported Linux version** (Ubuntu 22.04/24.04 or RHEL 8/9/10).  
 Avoid outdated kernels because CNI modules may fail.
 
-and this modern versions uses nftables, not the legacy iptables 
- you can chnage this if you want to switch back to iptbales 
+and this modern versions uses nftables, not the legacy iptables  
+you can chnage this if you want to switch back to iptbales 
 
 ### **1.2 Static IP**
 Every node must have a **fixed IP** so kubelet, API server, and CNI routing remain stable.
@@ -48,8 +48,6 @@ Kubernetes also needs **IP masquerading** because pod IPs are internal and not r
 
 ---
 
-If you want, I can now add the **exact commands** for loading modules and enabling masquerading.
-
 ### **2.2 Enable IP Forwarding**
 Linux blocks forwarding by default.  
 Kubernetes needs forwarding for:
@@ -65,11 +63,7 @@ These must be permanent via `/etc/sysctl.d/k8s.conf`.
 
 ---
 
-#   delete UFW ( uncomplicated firewalld and in place of that install firewalld)
-
- Here is the **clean, corrected, production‑grade note** for your firewall section — short, simple, and written exactly like real infra documentation.
-
----
+# delete UFW ( uncomplicated firewalld and in place of that install firewalld)
 
 # **Firewall Choice: Replace UFW with Firewalld (Clean Notes)**
 
@@ -109,6 +103,23 @@ Install on **all nodes**:
 
 ---
 
+#  **(NEW) Kubelet — What, Where, Why (Concise Notes)**
+
+### **Kubelet Overview (Paragraph)**  
+Kubelet is the primary node agent responsible for running and managing pods on every Kubernetes node. It communicates with the API server, starts and stops pods, monitors container health, restarts failed containers, and sets up pod networking by invoking the CNI plugin. It also reports the node’s status back to the control plane. Without kubelet, a node cannot join the cluster, cannot run pods, and will always remain in a NotReady state.
+
+### **Notes (Main Points Only)**  
+- Starts/stops pods based on API server instructions.  
+- Monitors containers and restarts them on failure.  
+- Reports node status (**Ready/NotReady**) to the control plane.  
+- Calls the **CNI plugin** to configure pod networking.  
+- Keeps the node registered and healthy in the cluster.  
+- Runs on **every node** as a systemd service.  
+- Required for kubeadm init/join to work.  
+- Without kubelet → node cannot join, pods cannot run, node stays **NotReady**.
+
+---
+
 ## **5. Control Plane Setup (Master Node)**
 
 ### **5.1 Initialize Cluster**
@@ -130,7 +141,6 @@ Copy admin.conf to user’s home:
 
 ## **6. Install CNI (Networking Layer)**  
 Apply Calico (recommended):
-
 
 This enables:
 - Pod IP assignment  
@@ -154,6 +164,50 @@ Check cluster health:
 - containerd running  
 - CNI OK  
 - kubelet active  
+---
+---
+
+# ✅ **TLS Bootstrap**
+
+### **Paragraph**  
+TLS Bootstrap is the secure process where a new kubelet proves its identity to the API server and becomes a trusted node. The kubelet uses a temporary bootstrap token to request a certificate, the control‑plane signs it, and kubelet switches to this real certificate for all future communication. This ensures only authorized nodes join the cluster and all kubelet ↔ API server traffic is encrypted.
+
+### **Notes**  
+- kubelet sends CSR → API server signs → kubelet becomes trusted.  
+- Node registers only after certificate is issued.  
+- Prevents fake/rogue nodes from joining.  
+- All kubelet communication is TLS‑encrypted.  
+- Required for secure production clusters.
 
 ---
 
+#  **What survives reboot (main only)**  
+- Node, kubelet, containerd, pods, cluster state → **survive reboot**.  
+- Certificates → **expire**, not lost on reboot but expire over time.
+
+---
+
+#  **Check & Renew Certificates**  
+```
+kubectl certs check-expiration
+kubectl certs renew <component>
+```
+
+---
+
+# **TLS Termination**
+
+### **Paragraph (short + real prod meaning)**  
+TLS Termination means the Load Balancer or Ingress decrypts HTTPS traffic and sends plain HTTP to backend pods. This centralizes certificate management, reduces CPU load on pods, and simplifies rotation. It is the most common production setup because certificates live only on the LB/Ingress, not inside every pod.
+ 
+- LB/Ingress decrypts HTTPS → pod gets HTTP.  
+- Certificates stored only on LB/Ingress.  
+- Simplifies cert rotation and management.  
+- Reduces CPU load on pods.  
+- Used in 90% of real production clusters.
+
+---
+
+# **Traffic Flow (main)**  
+```
+Client → HTTPS → Load Balancer → HTTP → Pod
