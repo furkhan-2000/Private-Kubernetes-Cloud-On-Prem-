@@ -64,8 +64,6 @@ A CNI like Calico is installed once on the control‑plane, and Kubernetes autom
 
 ---
 
-### 🔹 Pros & cons table (short, sharp)
-
 | CNI     | Pros                                                                 | Cons                                                                 |
 |---------|----------------------------------------------------------------------|----------------------------------------------------------------------|
 | Calico  | NetworkPolicy, BGP, good perf, mature, flexible                      | More complex than Flannel, BGP/eBPF can be tricky                    |
