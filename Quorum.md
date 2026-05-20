@@ -95,3 +95,7 @@ kubectl is only a client. It never runs on masters or workers. It sends HTTPS AP
 ```
 kubectl → LB → Master API → etcd → Scheduler → Worker → Pod
 ```
+
+NOTE:: mTLS inside the cluster (Pod ↔️ Pod encryption)
+HAProxy only encrypts traffic from outside the cluster.
+Inside the cluster, Pod‑to‑Pod traffic is NOT encrypted unless a mesh is used.
