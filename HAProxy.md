@@ -24,7 +24,9 @@ Workers also report back to masters **through the same LB VIP**.
 - Workers run pods (kubelet + containerd).  
 - Calico handles pod routing (BGP).  
 - If a master fails → LB automatically shifts traffic.
-
+---
+![lb](images/LB.png)
+---
 
 # 🟦 **Load Balancer Setup (HAProxy)**
 
