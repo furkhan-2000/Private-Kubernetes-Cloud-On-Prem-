@@ -13,5 +13,10 @@
   - Monitoring stack (Prometheus, Grafana, Loki, Node Exporter)  
   - Logging stack (Fluent Bit → Loki)  
 - Everything required to deploy, operate, and maintain this cluster is already documented.
---- 
+---  
 
+This diagram shows the high‑level architecture of your on‑prem Kubernetes cluster with Linkerd service mesh integrated.
+
+All components, networking flows, and service‑mesh paths in the repo are based on this architecture.
+
+![kubernetes-cluster-on-perm](images/On%20Perm.png)
