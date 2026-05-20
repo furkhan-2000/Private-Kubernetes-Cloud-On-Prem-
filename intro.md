@@ -103,12 +103,11 @@ Install on **all nodes**:
 
 ---
 
-#  **(NEW) Kubelet — What, Where, Why (Concise Notes)**
+#  **(NEW) Kubelet — What, Where, Why**
 
-### **Kubelet Overview (Paragraph)**  
+### **Kubelet Overview**  
 Kubelet is the primary node agent responsible for running and managing pods on every Kubernetes node. It communicates with the API server, starts and stops pods, monitors container health, restarts failed containers, and sets up pod networking by invoking the CNI plugin. It also reports the node’s status back to the control plane. Without kubelet, a node cannot join the cluster, cannot run pods, and will always remain in a NotReady state.
-
-### **Notes (Main Points Only)**  
+  
 - Starts/stops pods based on API server instructions.  
 - Monitors containers and restarts them on failure.  
 - Reports node status (**Ready/NotReady**) to the control plane.  
@@ -169,10 +168,8 @@ Check cluster health:
 
 # ✅ **TLS Bootstrap**
 
-### **Paragraph**  
 TLS Bootstrap is the secure process where a new kubelet proves its identity to the API server and becomes a trusted node. The kubelet uses a temporary bootstrap token to request a certificate, the control‑plane signs it, and kubelet switches to this real certificate for all future communication. This ensures only authorized nodes join the cluster and all kubelet ↔ API server traffic is encrypted.
-
-### **Notes**  
+ 
 - kubelet sends CSR → API server signs → kubelet becomes trusted.  
 - Node registers only after certificate is issued.  
 - Prevents fake/rogue nodes from joining.  
@@ -181,7 +178,7 @@ TLS Bootstrap is the secure process where a new kubelet proves its identity to t
 
 ---
 
-#  **What survives reboot (main only)**  
+#  **What survives reboot**  
 - Node, kubelet, containerd, pods, cluster state → **survive reboot**.  
 - Certificates → **expire**, not lost on reboot but expire over time.
 
@@ -197,7 +194,6 @@ kubectl certs renew <component>
 
 # **TLS Termination**
 
-### **Paragraph (short + real prod meaning)**  
 TLS Termination means the Load Balancer or Ingress decrypts HTTPS traffic and sends plain HTTP to backend pods. This centralizes certificate management, reduces CPU load on pods, and simplifies rotation. It is the most common production setup because certificates live only on the LB/Ingress, not inside every pod.
  
 - LB/Ingress decrypts HTTPS → pod gets HTTP.  
@@ -211,3 +207,75 @@ TLS Termination means the Load Balancer or Ingress decrypts HTTPS traffic and se
 # **Traffic Flow (main)**  
 ```
 Client → HTTPS → Load Balancer → HTTP → Pod
+
+---
+
+# ⭐ **ETCD + RAFT + Certificates — Final Concise Notes**
+
+## 🔹 **etcdctl (etcd‑client) — what it does**
+- check etcd **health**
+- check **quorum**
+- check **leader**
+- check **members**
+- take **backups**
+- view **cluster status**
+
+---
+
+# ⭐ **ETCD RAFT Concepts**
+
+| Term | Meaning (simple) | Indicates | Good/Bad |
+|------|------------------|-----------|----------|
+| **IS LEARNER** | new node syncing | not voting yet | false = GOOD |
+| **RAFT TERM** | election round | leader changes | higher = normal |
+| **RAFT INDEX** | total writes stored | cluster updates | should increase |
+| **APPLIED INDEX** | writes applied locally | node sync status | must match index |
+| **Mismatch** | node behind | slow/unhealthy | small gap OK, big gap BAD |
+
+---
+
+# ⭐ **Ultra‑Short Memory Trick**
+- **Learner** → new guy learning  
+- **Term** → election round  
+- **Index** → total writes  
+- **Applied** → writes applied locally  
+- **Match = healthy**, mismatch = lag  
+
+---
+
+# ⭐ **Commands**
+
+### **Single master**
+```
+sudo ETCDCTL_API=3 etcdctl \
+  --endpoints=https://127.0.0.1:2379 \
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key \
+  endpoint status --write-out=table
+```
+
+### **All 3 masters**
+```
+sudo ETCDCTL_API=3 etcdctl \
+  --endpoints=https://172.168.50.130:2379,https://172.168.50.139:2379,https://172.168.50.137:2379 \
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key \
+  endpoint status --write-out=table
+```
+
+---
+#  **Certificate Rule**
+
+### **All Kubernetes certificates originate ONLY from master1.**
+
+- master1 = **root CA + API certs + front‑proxy certs + SA keys**
+- master2/master3 **reuse** these certs  
+- they **do not generate new ones**
+- workers **never receive certs manually**  
+  - kubelet auto‑requests a signed cert from the CA on master1
+
+### ✔ Simple rule:
+**Everything is signed by master1.  
+All other nodes must trust master1’s CA.**
