@@ -138,3 +138,189 @@ Kubernetes cannot create real LoadBalancers on on‑prem because it depends on c
 - Kubernetes cannot allocate external IPs by itself.  
 - MetalLB provides LB functionality for bare‑metal.  
 - Assigns IPs from your LAN → services get real external IPs.
+
+---
+
+## **1. Master2 Join Failing at [check‑etcd]**
+**Cause:** etcd ports **2379/2380** blocked in firewall.  
+**Fix:** Open ports on both masters (internal zone).  
+**Result:** Join proceeds normally.
+
+---
+
+## **2. kubelet CrashLoop (config.yaml Missing)**
+**Cause:** `kubeadm join` failed early → kubelet never received config → crash every 10s.  
+**Fix:** Never create config manually. Fully reset and retry.
+
+```
+sudo kubeadm reset -f
+sudo rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd $HOME/.kube
+sudo iptables -F && sudo iptables -t nat -F && sudo iptables -X
+sudo systemctl restart containerd
+```
+
+---
+
+## **3. etcd Bound to Public IP**
+**Symptoms:** Port 2380 reachable only on public interface.  
+**Diagnosis:**  
+```
+sudo ss -tlnp | grep 2380
+nc -zv <private-ip> 2380
+```
+
+**Fix:** Re‑init master1 with correct private IP.
+
+```
+sudo kubeadm reset -f
+sudo rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd
+
+sudo kubeadm init \
+  --control-plane-endpoint "172.168.50.112:6443" \            #LB private ip 
+  --apiserver-advertise-address 172.168.50.130 \              # master1 control plane main private ip 
+  --pod-network-cidr 192.168.0.0/16 \                         # pod cidr calico 
+  --upload-certs
+```
+
+Configure kubectl:
+```
+mkdir -p $HOME/.kube
+sudo cp /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+```
+
+---
+
+## **4. SWAP Enabled**
+**Result:** kubelet refuses to start.  
+**Fix:** Disable swap permanently.
+
+---
+
+## **5. Ghost etcd Learner Members**
+**Cause:** Every failed join left an unstarted etcd learner. etcd allows **only one learner at a time**, so new joins were rejected.
+
+**List members:**
+```
+etcdctl member list
+```
+
+**Remove ghost entries:**
+```
+etcdctl member remove <id>
+```
+
+---
+
+## **6. kubectl Not Working on Master2**
+**Cause:** kubeconfig not created → kubectl falls back to localhost:8080.  
+**Fix:**
+```
+mkdir -p $HOME/.kube
+sudo cp /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+```
+
+---
+
+## **7. Full Master Reset (When Things Get very Messy)**
+
+```
+sudo kubeadm reset -f
+sudo rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd $HOME/.kube
+sudo rm -rf /etc/cni/net.d /run/calico /var/lib/calico
+sudo iptables -F && sudo iptables -t nat -F && sudo iptables -X
+sudo systemctl restart containerd
+sudo systemctl enable containerd --now
+
+```
+
+Re‑init:
+```
+sudo kubeadm init \
+  --control-plane-endpoint "172.168.50.112:6443" \
+  --apiserver-advertise-address 172.168.50.130 \
+  --pod-network-cidr 192.168.0.0/16 \
+  --upload-certs
+```
+
+---
+
+## **8. Power‑Off / Power‑On Sequence (Correct Order)**
+
+### **Power Off**
+ monitoring server
+ Workers    
+ Master
+ LB  
+ Bastion
+
+### **Power On**
+1. Bastion   
+2. Lb 
+3. Master
+4. Workers
+5. monitoring server   
+
+---
+
+## **9. worker Join Command**
+
+`kubeadm token create --print-join-command` → **worker join only**. run this on master 
+
+For master join:
+
+### Step 1 — Token + Hash
+```
+kubeadm token create --print-join-command
+```
+
+### Step 2 — Certificate Key
+```
+kubeadm init phase upload-certs --upload-certs
+```
+
+### Step 3 — Combine
+```
+kubeadm join 172.168.50.112:6443 \
+  --token <token> \
+  --discovery-token-ca-cert-hash sha256:<hash> \
+  --control-plane \
+  --certificate-key <cert-key> \
+  --apiserver-advertise-address <new-master-private-ip>
+```
+
+---
+
+## **10. Worker Join Failure (Multi‑NIC Routing Issue)**
+
+### **Cause:**  
+Worker had **public + private NICs**.  
+Default route was on **public NIC**, so ClusterIP traffic (10.96.0.1:443) went out the wrong interface → Calico CNI failed → worker stayed NotReady.
+
+### **Why Masters Didn’t Break:**  
+Masters used `--apiserver-advertise-address`, forcing private IP.  
+Workers rely on routing table → wrong default route = broken CNI.
+
+### **Fix: Force Kubernetes traffic through private NIC**
+
+```
+sudo ip route add 10.96.0.0/12 via 172.168.50.1 dev ens192
+sudo ip route add 192.168.0.0/16 via 172.168.50.1 dev ens192
+```
+
+### **Make permanent (RHEL):**
+```
+cat > /etc/sysconfig/network-scripts/route-ens192 << EOF
+10.96.0.0/12 via 172.168.50.1 dev ens192
+192.168.0.0/16 via 172.168.50.1 dev ens192
+EOF
+```
+
+### **Meaning:**
+- `10.96.0.0/12` = Kubernetes **Service CIDR**  
+- `192.168.0.0/16` = **Pod CIDR**  
+Both must route through **private NIC** on multi‑interface workers.
+
+---
+
