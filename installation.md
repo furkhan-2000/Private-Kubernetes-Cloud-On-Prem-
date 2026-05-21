@@ -402,3 +402,187 @@ sudo kubeadm join 172.168.50.112:6443 \
   --token <token> \
   --discovery-token-ca-cert-hash sha256:<hash>
 ```
+---
+
+Alright Furkhan — **I’ll organize this cleanly, validate it, and give you the correct production‑grade flow** for:
+
+1. **Post‑cluster validation**  
+2. **Linkerd installation**  
+3. **Sidecar injection setup**  
+
+Everything will be structured, correct, and ready to run.
+
+---
+
+# **18. Validate All Masters, Workers, and Calico After Joining**
+
+After joining all control‑plane nodes and workers, verify:
+
+### **Check all pods (Calico, CoreDNS, kube‑system)**
+```
+kubectl get pods -A -o wide
+```
+
+You must see:
+
+- `calico-node` running on **every node**
+- `calico-kube-controllers` running on **control plane**
+- `coredns` running
+- `kube-proxy` running
+- All nodes in **Ready** state
+
+### **Check nodes**
+```
+kubectl get nodes -o wide
+```
+
+Verify:
+
+- All masters = Ready, control-plane  
+- All workers = Ready  
+- Internal IP = your private NIC  
+- No `NotReady` or `NetworkUnavailable` conditions
+
+### **Check routes**
+```
+ip route
+```
+
+Ensure pod CIDR routes exist (Calico automatically adds them).
+
+---
+
+# **19. Install Linkerd (Service Mesh)**  
+
+## **19.1 Install Linkerd CLI (Pinned Version)**
+
+```
+curl -sL https://run.linkerd.io/install | LINKERD2_VERSION=stable-2.14.10 sh
+```
+
+Add CLI to PATH:
+```
+export PATH=$PATH:$HOME/.linkerd2/bin
+echo 'export PATH=$PATH:$HOME/.linkerd2/bin' >> ~/.bashrc
+source ~/.bashrc
+```
+
+Verify:
+```
+linkerd version
+```
+---
+
+## **19.2 Pre‑Check Before Installing Control Plane**
+```
+linkerd check --pre
+```
+
+---
+
+## **19.3 Install Linkerd Control Plane**
+
+### Install CRDs:
+```
+linkerd install --crds | kubectl apply -f -
+```
+
+### Install control plane:
+```
+linkerd install | kubectl apply -f -
+```
+
+### Validate installation:
+```
+linkerd check
+```
+
+You must see **Status: Linkerd is up and running**.
+
+---
+
+# **20. Enable Sidecar Injection**
+
+You have two correct options:
+
+---
+
+## **Option A — Namespace‑Level Injection (Recommended)**
+
+Enable injection for entire namespace:
+```
+kubectl annotate namespace myapp linkerd.io/inject=enabled
+```
+
+Any new pod created in this namespace will automatically get the Linkerd proxy.
+
+---
+
+## **Option B — Deployment‑Level Injection**
+
+Add inside your Deployment YAML:
+
+```yaml
+metadata:
+  annotations:
+    linkerd.io/inject: "enabled"
+```
+
+Then redeploy:
+```
+kubectl rollout restart deployment <name> -n <namespace>
+```
+
+---
+
+# **21. Validate Linkerd Sidecar Injection**
+
+Check if pods have **2 containers** (app + linkerd-proxy):
+
+```
+kubectl get pods -n myapp -o wide
+kubectl describe pod <pod-name> -n myapp
+```
+
+You should see:
+
+- `linkerd-proxy` container  
+- `linkerd-init` init container  
+
+---
+# If you opt for Istio ( service mesh) then go for this: 
+
+***Download & Install Istio CLI***
+
+``` 
+mkdir -p ~/istio
+cd ~/istio
+curl -4 -L https://github.com/istio/istio/releases/download/1.23.0/istio-1.23.0-linux-amd64.tar.gz -o istio.tar.gz
+tar -xvf istio.tar.gz
+cd istio-1.23.0
+export PATH=$PWD/bin:$PATH
+istioctl version
+
+```
+***Install Istio Control Plane***
+```
+istioctl install --set profile=default -y
+kubectl get pods -n istio-system
+
+```
+***Create Namespace + Enable Sidecar Injection***
+``` 
+kubectl create namespace app-core
+kubectl label namespace app-core istio-injection=enabled
+```
+*** Enable STRICT mTLS production security baseline***
+``` 
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: istio-system
+spec:
+  mtls:
+    mode: STRICT
+```
